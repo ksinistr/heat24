@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
@@ -23,9 +24,9 @@ import (
 type openMeteoResp struct {
 	Timezone string `json:"timezone"`
 	Hourly   struct {
-		Time                []string  `json:"time"`
-		Temperature2m       []float64 `json:"temperature_2m"`
-		RelativeHumidity2m  []float64 `json:"relative_humidity_2m"`
+		Time               []string  `json:"time"`
+		Temperature2m      []float64 `json:"temperature_2m"`
+		RelativeHumidity2m []float64 `json:"relative_humidity_2m"`
 	} `json:"hourly"`
 }
 
@@ -87,7 +88,7 @@ func fetchArchive(lat, lon float64) (*openMeteoResp, error) {
 	q.Set("start_date", "2024-01-01")
 	q.Set("end_date", "2024-12-31")
 	q.Set("hourly", "temperature_2m,relative_humidity_2m")
-	q.Set("timezone", "Africa/Cairo")
+	q.Set("timezone", "auto")
 	u.RawQuery = q.Encode()
 
 	client := retryablehttp.NewClient()
@@ -248,95 +249,117 @@ func (ct *colorThumbnail) Thumbnail(c *draw.Canvas) {
 	c.FillPolygon(ct.color, poly)
 }
 
+type Location struct {
+	Name string
+	Lat  float64
+	Lon  float64
+}
+
+var locations = []Location{
+	{"Paphos", 34.7768, 32.4245},
+	// {"Novi Sad", 45.2517, 19.8369},
+	// {"Palemi", 34.88593, 32.50657},
+	// {"Pana Panagia", 34.91901721271778, 32.630531461579665},
+	// {"Limmasol", 34.7071, 33.0226},
+	// {"Nicosia", 35.1856, 33.3823},
+	// {"Larnaca", 34.9190, 33.6232},
+	// {"Famagusta", 35.1264, 33.9197},
+	// {"Troodos", 34.9886, 32.8662},
+}
+
 func main() {
 	const hours = 24
 	const months = 12
 
-	lat, lon := 34.7768, 32.4245 // Paphos
+	for _, loc := range locations {
+		lat := loc.Lat
+		lon := loc.Lon
 
-	om, err := fetchArchive(lat, lon)
-	if err != nil {
-		log.Fatalf("fetch: %v", err)
-	}
-
-	hmd := processData(om)
-
-	data := make([]float64, hours*months)
-	for mo := 0; mo < months; mo++ {
-		for hr := 0; hr < hours; hr++ {
-			data[hr*months+mo] = hmd.avg(mo, hr)
+		om, err := fetchArchive(lat, lon)
+		if err != nil {
+			log.Fatalf("fetch: %v", err)
 		}
+
+		hmd := processData(om)
+
+		data := make([]float64, hours*months)
+		for mo := range months {
+			for hr := range hours {
+				data[hr*months+mo] = hmd.avg(mo, hr)
+			}
+		}
+
+		matData := mat.NewDense(hours, months, data)
+		grid := offsetUnitGrid{
+			XOffset: 0,
+			YOffset: 0,
+			Data:    matData,
+		}
+
+		pal := NewDiscretePalette()
+		hm := plotter.NewHeatMap(grid, pal)
+
+		p := plot.New()
+		p.Title.Text = fmt.Sprintf("Annual Heat Index Heatmap (Hour vs Month) - %s", loc.Name)
+		p.X.Label.Text = "Month"
+		p.Y.Label.Text = "Hour of Day"
+
+		p.X.Tick.Marker = monthTicks{Names: []string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}}
+		p.Y.Tick.Marker = hourTicks{Step: 2}
+
+		p.X.Min = 0
+		p.X.Max = float64(months)
+		p.Y.Min = 0
+		p.Y.Max = float64(hours)
+
+		p.X.Padding = 0
+		p.Y.Padding = 0
+
+		p.Add(hm)
+
+		// Legend for discrete colors.
+		l := plot.NewLegend()
+		legendEntries := []struct {
+			Label string
+			Color color.Color
+		}{
+			{"<27°C", LightGreen},
+			{"27-32°C", Yellow},
+			{"32-41°C", Orange},
+			{"41-54°C", Red},
+			{">54°C", DarkRed},
+		}
+
+		// Add legend entries with custom thumbnails
+		for _, entry := range legendEntries {
+			thumb := &colorThumbnail{color: entry.Color}
+			l.Add(entry.Label, thumb)
+		}
+
+		l.Top = true
+
+		img := vgimg.New(800, 600)
+		dc := draw.New(img)
+
+		// Legend layout.
+		r := l.Rectangle(dc)
+		legendWidth := r.Max.X - r.Min.X
+		l.Draw(dc)
+		dc = draw.Crop(dc, 0, -legendWidth-vg.Length(5*vg.Millimeter), 0, 0)
+		p.Draw(dc)
+
+		safeName := strings.ReplaceAll(strings.ToLower(loc.Name), " ", "_")
+		filename := fmt.Sprintf("heat_index_annual_%s.png", safeName)
+		out, err := os.Create(filename)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer out.Close()
+		png := vgimg.PngCanvas{Canvas: img}
+		if _, err = png.WriteTo(out); err != nil {
+			log.Fatal(err)
+		}
+
+		fmt.Printf("Saved %s\n", filename)
 	}
-
-	matData := mat.NewDense(hours, months, data)
-	grid := offsetUnitGrid{
-		XOffset: 0,
-		YOffset: 0,
-		Data:    matData,
-	}
-
-	pal := NewDiscretePalette()
-	hm := plotter.NewHeatMap(grid, pal)
-
-	p := plot.New()
-	p.Title.Text = "Annual Heat Index Heatmap (Hour vs Month) - Paphos"
-	p.X.Label.Text = "Month"
-	p.Y.Label.Text = "Hour of Day"
-
-	p.X.Tick.Marker = monthTicks{Names: []string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}}
-	p.Y.Tick.Marker = hourTicks{Step: 2}
-
-	p.X.Min = 0
-	p.X.Max = float64(months)
-	p.Y.Min = 0
-	p.Y.Max = float64(hours)
-
-	p.X.Padding = 0
-	p.Y.Padding = 0
-
-	p.Add(hm)
-
-	// Legend for discrete colors.
-	l := plot.NewLegend()
-	legendEntries := []struct {
-		Label string
-		Color color.Color
-	}{
-		{"<27°C", LightGreen},
-		{"27-32°C", Yellow},
-		{"32-41°C", Orange},
-		{"41-54°C", Red},
-		{">54°C", DarkRed},
-	}
-	
-	// Add legend entries with custom thumbnails
-	for _, entry := range legendEntries {
-		thumb := &colorThumbnail{color: entry.Color}
-		l.Add(entry.Label, thumb)
-	}
-	
-	l.Top = true
-
-	img := vgimg.New(800, 600)
-	dc := draw.New(img)
-
-	// Legend layout.
-	r := l.Rectangle(dc)
-	legendWidth := r.Max.X - r.Min.X
-	l.Draw(dc)
-	dc = draw.Crop(dc, 0, -legendWidth-vg.Length(5*vg.Millimeter), 0, 0)
-	p.Draw(dc)
-
-	filename := "heat_index_annual.png"
-	out, err := os.Create(filename)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer out.Close()
-	png := vgimg.PngCanvas{Canvas: img}
-	if _, err = png.WriteTo(out); err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Printf("Saved %s\n", filename)
 }
