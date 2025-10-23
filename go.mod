@@ -5,6 +5,7 @@ go 1.23.12
 require (
 	github.com/gregjones/httpcache v0.0.0-20190611155906-901d90724c79
 	github.com/hashicorp/go-retryablehttp v0.7.8
+	gonum.org/v1/gonum v0.16.0
 	gonum.org/v1/plot v0.16.0
 )
 
