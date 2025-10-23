@@ -76,7 +76,49 @@ func heatIndexC(tempC, rh float64) float64 {
 	return (HI - 32.0) * 5.0 / 9.0
 }
 
-func fetchArchive(lat, lon float64) (*openMeteoResp, error) {
+func getCacheFilename(locName string) string {
+	safeName := strings.ReplaceAll(strings.ToLower(locName), " ", "_")
+	return fmt.Sprintf("archive-weather-%s-2024.json", safeName)
+}
+
+func saveToCache(filename string, data *openMeteoResp) error {
+	file, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(data)
+}
+
+func loadFromCache(filename string) (*openMeteoResp, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var data openMeteoResp
+	decoder := json.NewDecoder(file)
+	if err := decoder.Decode(&data); err != nil {
+		return nil, err
+	}
+	return &data, nil
+}
+
+func fetchArchive(lat, lon float64, locName string) (*openMeteoResp, error) {
+	cacheFile := getCacheFilename(locName)
+
+	// Try to load from cache first
+	if cached, err := loadFromCache(cacheFile); err == nil {
+		fmt.Printf("Loaded cached data for %s\n", locName)
+		return cached, nil
+	}
+
+	fmt.Printf("Fetching fresh data for %s\n", locName)
+
 	u := url.URL{
 		Scheme: "https",
 		Host:   "archive-api.open-meteo.com",
@@ -108,6 +150,13 @@ func fetchArchive(lat, lon float64) (*openMeteoResp, error) {
 		return nil, err
 	}
 
+	// Save to cache for future use
+	if err := saveToCache(cacheFile, &om); err != nil {
+		log.Printf("Warning: failed to cache data for %s: %v", locName, err)
+	} else {
+		fmt.Printf("Cached data for %s\n", locName)
+	}
+
 	return &om, nil
 }
 
@@ -120,7 +169,7 @@ func processData(om *openMeteoResp) *HeatMapData {
 	hmd := &HeatMapData{}
 
 	n := len(om.Hourly.Time)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		t, err := time.ParseInLocation("2006-01-02T15:04", om.Hourly.Time[i], loc)
 		if err != nil {
 			log.Printf("parse time %s: %v", om.Hourly.Time[i], err)
@@ -180,16 +229,15 @@ func NewDiscretePalette() *DiscretePalette {
 	return pal
 }
 
-func (p *DiscretePalette) ColorAt(z float64) color.Color {
-	if math.IsNaN(z) || z < 27 {
-		return LightGreen
+func (p *DiscretePalette) At(z float64) (color.Color, error) { if math.IsNaN(z) || z < 27 {
+		return LightGreen, nil
 	}
 	for i, edge := range p.binEdges {
 		if z < edge {
-			return p.colors[i+1]
+			return p.colors[i], nil
 		}
 	}
-	return DarkRed
+	return DarkRed, nil
 }
 
 func (p *DiscretePalette) Min() float64 {
@@ -257,7 +305,7 @@ type Location struct {
 
 var locations = []Location{
 	{"Paphos", 34.7768, 32.4245},
-	// {"Novi Sad", 45.2517, 19.8369},
+	{"Novi Sad", 45.2517, 19.8369},
 	// {"Palemi", 34.88593, 32.50657},
 	// {"Pana Panagia", 34.91901721271778, 32.630531461579665},
 	// {"Limmasol", 34.7071, 33.0226},
@@ -272,10 +320,11 @@ func main() {
 	const months = 12
 
 	for _, loc := range locations {
+		log.Printf("Processing location: %s\n", loc.Name)
 		lat := loc.Lat
 		lon := loc.Lon
 
-		om, err := fetchArchive(lat, lon)
+		om, err := fetchArchive(lat, lon, loc.Name)
 		if err != nil {
 			log.Fatalf("fetch: %v", err)
 		}
@@ -285,7 +334,9 @@ func main() {
 		data := make([]float64, hours*months)
 		for mo := range months {
 			for hr := range hours {
-				data[hr*months+mo] = hmd.avg(mo, hr)
+				avgHI := hmd.avg(mo, hr)
+				fmt.Printf("Month %d Hour %d: avg HI = %.2f°C\n", mo+1, hr, avgHI)
+				data[hr*months+mo] = avgHI
 			}
 		}
 
