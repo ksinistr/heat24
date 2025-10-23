@@ -1,45 +1,50 @@
-# Crush Agent Instructions
-
-## Project Overview
-
-Python project using numpy, pandas, matplotlib for weather data processing.
+# CRUSH.md for heat24
 
 ## Commands
 
-- Run project: `uv run main.py`
-- Install dependencies: `uv pip install -e .`
-- Lint: `ruff check .`
-- Format: `ruff format .`
-- Type check: `mypy .`
-- Run tests: `pytest`
-- Run single test: `pytest path/to/test_file.py::test_function_name`
+### Build & Run
+- Build: `go build -o heat24 ./cmd`
+- Run: `go run ./cmd`
+- Clean: `go clean`
 
-## Code Style
+### Test
+- All: `go test -v ./...`
+- Single: `go test -v -run ^TestName$ ./internal/...` (no tests currently)
 
-- Use ruff for linting and formatting
-- Use mypy for type checking
-- Follow PEP 8
-- Use type hints for all functions
-- Use descriptive variable names
-- Keep functions small and focused
-- Use docstrings for modules, classes, and functions
+### Lint & Check
+- Format: `go fmt ./...`
+- Vet: `go vet ./...`
+- Type check: `go vet ./...` (uses Go's built-in)
 
-## Import Style
+## Code Style Guidelines
 
-- Standard library imports first
-- Third-party imports second
-- Local imports last
-- Alphabetical order within each group
-- No wildcards
+### Imports
+- Group: Standard library (e.g., fmt, time), then third-party (e.g., gonum), then local (internal).
+- Single import per line: `import "fmt"`.
+- No aliases unless necessary.
 
-## Naming Conventions
+### Formatting
+- Use `go fmt` for standard indentation (tabs), 8-space shift width.
+- Line length: Flexible, but prefer <100 chars.
+- No trailing whitespace.
 
-- snake_case for variables and functions
-- PascalCase for classes
-- UPPER_CASE for constants
+### Types & Naming
+- Exported: Uppercase (e.g., `type Averages struct`).
+- Internal: Lowercase (e.g., `func heatIndexC`).
+- Structs: Simple fields (e.g., `TempSum float64`).
+- Vars/Funcs: Descriptive, camelCase.
 
-## Error Handling
+### Error Handling
+- Standard: `if err != nil { return ..., err }`.
+- Main: `log.Fatalf("msg: %v", err)`.
+- No panics; propagate errors.
 
-- Use specific exception types
-- Log errors appropriately
-- Don't catch exceptions silently
+### General
+- No comments in code (self-documenting).
+- Use math.NaN for missing values.
+- Dependencies: Stick to go.mod (gonum/plot, httpcache, etc.).
+- README outdated (Python refs); update for Go.
+
+## Notes
+- Project fetches Open-Meteo weather, computes heat index, plots PDFs.
+- No Cursor/Copilot rules found.
