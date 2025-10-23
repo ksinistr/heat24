@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"image/color"
 	"log"
 	"math"
 	"net/http"
@@ -13,7 +14,6 @@ import (
 	"github.com/hashicorp/go-retryablehttp"
 	"gonum.org/v1/gonum/mat"
 	"gonum.org/v1/plot"
-	"gonum.org/v1/plot/palette"
 	"gonum.org/v1/plot/plotter"
 	"gonum.org/v1/plot/vg"
 	"gonum.org/v1/plot/vg/draw"
@@ -23,9 +23,9 @@ import (
 type openMeteoResp struct {
 	Timezone string `json:"timezone"`
 	Hourly   struct {
-		Time               []string  `json:"time"`
-		Temperature2m      []float64 `json:"temperature_2m"`
-		RelativeHumidity2m []float64 `json:"relative_humidity_2m"`
+		Time                []string  `json:"time"`
+		Temperature2m       []float64 `json:"temperature_2m"`
+		RelativeHumidity2m  []float64 `json:"relative_humidity_2m"`
 	} `json:"hourly"`
 }
 
@@ -119,7 +119,7 @@ func processData(om *openMeteoResp) *HeatMapData {
 	hmd := &HeatMapData{}
 
 	n := len(om.Hourly.Time)
-	for i := range n {
+	for i := 0; i < n; i++ {
 		t, err := time.ParseInLocation("2006-01-02T15:04", om.Hourly.Time[i], loc)
 		if err != nil {
 			log.Printf("parse time %s: %v", om.Hourly.Time[i], err)
@@ -149,6 +149,55 @@ func (g offsetUnitGrid) Dims() (c, r int)   { r, c = g.Data.Dims(); return c, r 
 func (g offsetUnitGrid) Z(c, r int) float64 { return g.Data.At(r, c) }
 func (g offsetUnitGrid) X(c int) float64    { return float64(c) + g.XOffset }
 func (g offsetUnitGrid) Y(r int) float64    { return float64(r) + g.YOffset }
+
+var (
+	LightGreen = color.RGBA{144, 238, 144, 255}
+	Yellow     = color.RGBA{255, 255, 0, 255}
+	Orange     = color.RGBA{255, 165, 0, 255}
+	Red        = color.RGBA{255, 0, 0, 255}
+	DarkRed    = color.RGBA{139, 0, 0, 255}
+)
+
+type DiscretePalette struct {
+	colors   []color.Color
+	binEdges []float64
+}
+
+func (p *DiscretePalette) Colors() []color.Color {
+	return p.colors
+}
+
+func (p *DiscretePalette) Len() int {
+	return len(p.colors)
+}
+
+func NewDiscretePalette() *DiscretePalette {
+	pal := &DiscretePalette{
+		colors:   []color.Color{LightGreen, Yellow, Orange, Red, DarkRed},
+		binEdges: []float64{27, 32, 41, 54},
+	}
+	return pal
+}
+
+func (p *DiscretePalette) ColorAt(z float64) color.Color {
+	if math.IsNaN(z) || z < 27 {
+		return LightGreen
+	}
+	for i, edge := range p.binEdges {
+		if z < edge {
+			return p.colors[i+1]
+		}
+	}
+	return DarkRed
+}
+
+func (p *DiscretePalette) Min() float64 {
+	return 20
+}
+
+func (p *DiscretePalette) Max() float64 {
+	return 60
+}
 
 // Month tick markers.
 type monthTicks struct {
@@ -183,6 +232,22 @@ func (h hourTicks) Ticks(min, max float64) []plot.Tick {
 	return ticks
 }
 
+// Simple thumbnail implementation for legend
+type colorThumbnail struct {
+	color color.Color
+}
+
+func (ct *colorThumbnail) Thumbnail(c *draw.Canvas) {
+	pts := []vg.Point{
+		{X: c.Min.X, Y: c.Min.Y},
+		{X: c.Min.X, Y: c.Max.Y},
+		{X: c.Max.X, Y: c.Max.Y},
+		{X: c.Max.X, Y: c.Min.Y},
+	}
+	poly := c.ClipPolygonY(pts)
+	c.FillPolygon(ct.color, poly)
+}
+
 func main() {
 	const hours = 24
 	const months = 12
@@ -210,7 +275,7 @@ func main() {
 		Data:    matData,
 	}
 
-	pal := palette.Heat(20, 1)
+	pal := NewDiscretePalette()
 	hm := plotter.NewHeatMap(grid, pal)
 
 	p := plot.New()
@@ -231,24 +296,25 @@ func main() {
 
 	p.Add(hm)
 
-	// Legend (color scale).
+	// Legend for discrete colors.
 	l := plot.NewLegend()
-	thumbs := plotter.PaletteThumbnailers(pal)
-	for i := len(thumbs) - 1; i >= 0; i-- {
-		t := thumbs[i]
-		if i != 0 && i != len(thumbs)-1 {
-			l.Add("", t)
-			continue
-		}
-		var val float64
-		switch i {
-		case 0:
-			val = hm.Min
-		case len(thumbs) - 1:
-			val = hm.Max
-		}
-		l.Add(fmt.Sprintf("%.1f°C", val), t)
+	legendEntries := []struct {
+		Label string
+		Color color.Color
+	}{
+		{"<27°C", LightGreen},
+		{"27-32°C", Yellow},
+		{"32-41°C", Orange},
+		{"41-54°C", Red},
+		{">54°C", DarkRed},
 	}
+	
+	// Add legend entries with custom thumbnails
+	for _, entry := range legendEntries {
+		thumb := &colorThumbnail{color: entry.Color}
+		l.Add(entry.Label, thumb)
+	}
+	
 	l.Top = true
 
 	img := vgimg.New(800, 600)
