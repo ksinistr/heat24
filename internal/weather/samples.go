@@ -5,7 +5,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/nsr888/heat24/internal/heat"
+	"github.com/ksinistr/heat24/internal/heat"
 )
 
 const timeLayout = "2006-01-02T15:04"

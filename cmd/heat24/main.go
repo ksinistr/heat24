@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
-	"github.com/nsr888/heat24/internal/cache"
-	"github.com/nsr888/heat24/internal/config"
-	"github.com/nsr888/heat24/internal/report"
-	"github.com/nsr888/heat24/internal/weather"
+	"github.com/ksinistr/heat24/internal/cache"
+	"github.com/ksinistr/heat24/internal/config"
+	"github.com/ksinistr/heat24/internal/report"
+	"github.com/ksinistr/heat24/internal/weather"
 )
 
 const configPath = "config.yaml"

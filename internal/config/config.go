@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/jinzhu/configor"
-	"github.com/nsr888/heat24/internal/weather"
+	"github.com/ksinistr/heat24/internal/weather"
 )
 
 type Location struct {

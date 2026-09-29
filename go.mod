@@ -1,4 +1,4 @@
-module github.com/nsr888/heat24
+module github.com/ksinistr/heat24
 
 go 1.23.12
 

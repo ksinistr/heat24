@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/nsr888/heat24/internal/heat"
+	"github.com/ksinistr/heat24/internal/heat"
 )
 
 type Point struct {
