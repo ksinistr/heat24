@@ -5,12 +5,12 @@ import (
 	"time"
 
 	"github.com/jinzhu/configor"
-	"github.com/ksinistr/heat24/internal/weather"
+	"github.com/ksinistr/heat24/internal/openmeteo"
 )
 
 type Location struct {
 	Name          string `yaml:"name"`
-	weather.Point `yaml:",inline"`
+	openmeteo.Point `yaml:",inline"`
 }
 
 type Cache struct {

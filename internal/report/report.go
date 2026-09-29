@@ -8,12 +8,12 @@ import (
 
 	"github.com/ksinistr/heat24/internal/config"
 	"github.com/ksinistr/heat24/internal/heat"
-	"github.com/ksinistr/heat24/internal/weather"
+	"github.com/ksinistr/heat24/internal/openmeteo"
 )
 
 type Source interface {
-	LastWeek(p weather.Point) (weather.LastWeek, error)
-	Year(p weather.Point, year int) ([]heat.Sample, error)
+	LastWeek(p openmeteo.Point) (openmeteo.LastWeek, error)
+	Year(p openmeteo.Point, year int) ([]heat.Sample, error)
 }
 
 // Value encodes NaN as JSON null.

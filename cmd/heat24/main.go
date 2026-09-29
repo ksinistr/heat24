@@ -10,7 +10,7 @@ import (
 	"github.com/ksinistr/heat24/internal/cache"
 	"github.com/ksinistr/heat24/internal/config"
 	"github.com/ksinistr/heat24/internal/report"
-	"github.com/ksinistr/heat24/internal/weather"
+	"github.com/ksinistr/heat24/internal/openmeteo"
 )
 
 const configPath = "config.yaml"
@@ -37,8 +37,8 @@ func main() {
 	httpClient.RetryWaitMax = 2 * time.Second
 	httpClient.Logger = nil
 
-	source := weather.NewSource(
-		weather.NewClient(httpClient.StandardClient()),
+	source := openmeteo.NewSource(
+		openmeteo.NewClient(httpClient.StandardClient()),
 		cache.New(cfg.Cache.Dir, time.Now),
 		forecastTTL,
 		archiveTTL,
