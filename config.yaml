@@ -1,0 +1,45 @@
+cache:
+  dir: cache
+  forecast_ttl: 12h
+  archive_ttl: 0
+
+reports:
+  last_week:
+    locations:
+      - {name: Paphos, lat: 34.7768, lon: 32.4245}
+      - {name: Palemi, lat: 34.88593, lon: 32.50657}
+      - {name: Pana Panagia, lat: 34.919017, lon: 32.630531}
+      - {name: Limassol, lat: 34.7071, lon: 33.0226}
+      - {name: Nicosia, lat: 35.1856, lon: 33.3823}
+      - {name: Larnaca, lat: 34.9190, lon: 33.6232}
+      - {name: Famagusta, lat: 35.1264, lon: 33.9197}
+      - {name: Troodos, lat: 34.9886, lon: 32.8662}
+
+  month:
+    months: [5, 6, 7, 8, 9]
+    locations:
+      - {name: Paphos, lat: 34.7768, lon: 32.4245}
+      - {name: Karakol, lat: 42.4901, lon: 78.3958}
+      - {name: Naryn, lat: 41.4284, lon: 75.9916}
+      - {name: Bishkek, lat: 42.8747, lon: 74.5985}
+      - {name: Sevan, lat: 40.5556, lon: 45.0034}
+      - {name: Zlatibor, lat: 43.731396, lon: 19.696230}
+      - {name: Subotica, lat: 46.105426, lon: 19.659494}
+
+  annual:
+    locations:
+      - {name: Paphos, lat: 34.7768, lon: 32.4245}
+      - {name: Kampos, lat: 35.0403, lon: 32.7324}
+      - {name: Limassol, lat: 34.7071, lon: 33.0226}
+      - {name: Nicosia, lat: 35.1856, lon: 33.3823}
+      - {name: Novi Sad, lat: 45.2517, lon: 19.8369}
+      - {name: Belgrade, lat: 44.804, lon: 20.465}
+      - {name: Subotica, lat: 46.1004, lon: 19.6658}
+      - {name: Budva, lat: 42.2864, lon: 18.8419}
+      - {name: Sevan, lat: 40.5556, lon: 45.0034}
+      - {name: Yerevan, lat: 40.1792, lon: 44.4991}
+      - {name: Girona, lat: 41.9794, lon: 2.8214}
+      - {name: Bilbao, lat: 43.263, lon: -2.935}
+      - {name: London, lat: 51.5074, lon: -0.1278}
+      - {name: Kazan, lat: 55.7903, lon: 49.1347}
+      - {name: Tokyo, lat: 35.6762, lon: 139.6503}

@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heat Index 24h</title>
+<style>
+  :root { color-scheme: light; --bg: #fff; --fg: #1a1a1a; --muted: #666; --line: #e3e3e3; --accent: #d9480f; --plot-background: var(--bg); }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; display: flex; min-height: 100vh; }
+  nav { width: 180px; flex: none; border-right: 1px solid var(--line); padding: 16px 0; position: sticky; top: 0; height: 100vh; }
+  nav h1 { font-size: 15px; margin: 0 16px 12px; }
+  nav a { display: block; padding: 8px 16px; color: var(--fg); text-decoration: none; border-left: 3px solid transparent; }
+  nav a:hover { background: #f5f5f5; }
+  nav a.active { border-left-color: var(--accent); font-weight: 600; background: #fafafa; }
+  main { flex: 1; min-width: 0; padding: 16px 24px; }
+  section { max-width: 1100px; margin: 0 0 40px; }
+  h2 { margin: 0 0 4px; font-size: 18px; }
+  .meta { color: var(--muted); margin-bottom: 8px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; margin: 6px 0 4px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 14px; height: 14px; border-radius: 2px; display: inline-block; }
+  .legend i.line { height: 0; border-top: 2px dashed; border-radius: 0; }
+  .error { border: 1px dashed #c33; color: #a22; padding: 16px; border-radius: 4px; }
+  svg { max-width: 100%; height: auto; overflow: visible; }
+  @media (max-width: 700px) {
+    body { flex-direction: column; }
+    nav { width: auto; height: auto; position: static; border-right: 0; border-bottom: 1px solid var(--line); display: flex; padding: 8px; }
+    nav h1 { display: none; }
+    nav a { border-left: 0; border-bottom: 3px solid transparent; }
+    nav a.active { border-bottom-color: var(--accent); }
+    main { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+<nav>
+  <h1>Heat Index</h1>
+  <a href="#last-week" data-report="last-week">Last week</a>
+  <a href="#month" data-report="month">Month</a>
+  <a href="#annual" data-report="annual">Annual</a>
+</nav>
+<main id="report"></main>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="https://cdn.jsdelivr.net/npm/@observablehq/plot@0.6"></script>
+<script src="data.js"></script>
+<script>
+const RISK_LEVELS = [
+  { max: 27, label: "Suitable for activity", color: "green", opacity: 0.3 },
+  { max: 32, label: "Caution", color: "yellow", opacity: 0.5 },
+  { max: 41, label: "Extreme Caution", color: "#FFD700", opacity: 0.6 },
+  { max: 54, label: "Danger", color: "orange", opacity: 0.7 },
+  { max: Infinity, label: "Extreme Danger", color: "red", opacity: 0.8 },
+];
+const MONTH_BANDS = [
+  { from: -Infinity, to: 0, label: "Very Cold (<0°C)", color: "blue", opacity: 0.4 },
+  { from: 0, to: 10, label: "Cold (0-10°C)", color: "lightblue", opacity: 0.4 },
+  { from: 27, to: 32, label: "Caution (27-32°C)", color: "yellow", opacity: 0.8 },
+  { from: 32, to: 41, label: "Extreme Caution (32-41°C)", color: "orange", opacity: 0.6 },
+  { from: 41, to: 54, label: "Danger (41-54°C)", color: "orangered", opacity: 0.7 },
+  { from: 54, to: Infinity, label: "Extreme Danger (>54°C)", color: "red", opacity: 0.8 },
+];
+const ANNUAL_SCALE = {
+  domain: [0, 10, 27, 32, 41, 54],
+  range: ["#00008B", "#4169E1", "#90EE90", "#FFFF00", "#FFA500", "#FF0000", "#8B0000"],
+  labels: ["<0°C (Freezing)", "0-10°C (Cold)", "10-27°C (Mild)", "27-32°C (Caution)",
+    "32-41°C (Extreme Caution)", "41-54°C (Danger)", ">54°C (Extreme Danger)"],
+};
+const SERIES_COLORS = ["blue", "red", "green", "orange", "purple", "brown", "pink", "gray", "olive", "cyan"];
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const FULL_MONTH_NAMES = ["January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"];
+const STEP_MIN = 10;
+
+const riskIndex = value => RISK_LEVELS.findIndex(l => value < l.max);
+const pad2 = n => String(n).padStart(2, "0");
+const fmtMin = min => `${pad2(Math.floor(min / 60))}:${pad2(Math.round(min % 60))}`;
+const fmtValue = v => v == null ? "no data" : `${v.toFixed(1)} °C`;
+
+function section(title, meta, legend) {
+  const el = document.createElement("section");
+  el.innerHTML = `<h2>${title}</h2>` +
+    (meta ? `<div class="meta">${meta}</div>` : "") +
+    (legend ? `<div class="legend">${legend}</div>` : "");
+  return el;
+}
+
+function errorSection(title, message) {
+  const el = section(title);
+  const box = document.createElement("div");
+  box.className = "error";
+  box.textContent = `No data: ${message}`;
+  el.append(box);
+  return el;
+}
+
+function swatch(color, label, opacity = 1) {
+  return `<span><i style="background:${color};opacity:${opacity}"></i>${label}</span>`;
+}
+
+function interpolate(hourly) {
+  const points = [];
+  for (let m = 0; m <= 23 * 60; m += STEP_MIN) {
+    const h = Math.floor(m / 60);
+    const next = Math.min(h + 1, 23);
+    const a = hourly[h], b = hourly[next];
+    if (a == null || b == null) continue;
+    points.push({ hour: m / 60, value: a + (b - a) * (m % 60) / 60 });
+  }
+  return points;
+}
+
+function riskSegments(points) {
+  const rows = [];
+  let seg = 0;
+  let prev = null;
+  for (const p of points) {
+    const level = riskIndex(p.value);
+    if (prev !== null && level !== prev) {
+      rows.push({ ...p, level: prev, seg });
+      seg++;
+    }
+    rows.push({ ...p, level, seg });
+    prev = level;
+  }
+  return rows;
+}
+
+function renderLastWeekChart(d) {
+  const title = `24h Temperature/Heat Index (7-day hourly averages) — ${d.location}`;
+  if (d.error) return errorSection(title, d.error);
+
+  const hourly = d.hourly.map((value, hour) => ({ hour, value })).filter(r => r.value != null);
+  const segments = riskSegments(interpolate(d.hourly));
+  const base = d3.min(hourly, r => r.value) - 5;
+  const legend = RISK_LEVELS.map(l => swatch(l.color, l.label, l.opacity)).join("") +
+    `<span><i class="line" style="border-color:gold"></i>Sunrise</span>` +
+    `<span><i class="line" style="border-color:purple"></i>Sunset</span>`;
+
+  const el = section(title, `Sunrise ${fmtMin(d.sunriseMin)} · Sunset ${fmtMin(d.sunsetMin)}`, legend);
+  el.append(Plot.plot({
+    width: 1100,
+    height: 460,
+    marginLeft: 50,
+    x: { domain: [0, 24], ticks: d3.range(0, 25), tickFormat: pad2, label: `Local time (${d.timezone})` },
+    y: { label: "Temperature/Heat Index (°C)", grid: true, nice: true },
+    marks: [
+      Plot.areaY(segments, {
+        x: "hour", y1: base, y2: "value", z: "seg",
+        fill: r => RISK_LEVELS[r.level].color,
+        fillOpacity: r => RISK_LEVELS[r.level].opacity,
+      }),
+      Plot.ruleX([d.sunriseMin / 60], { stroke: "gold", strokeWidth: 1.5, strokeDasharray: "5,4" }),
+      Plot.ruleX([d.sunsetMin / 60], { stroke: "purple", strokeWidth: 1.5, strokeDasharray: "5,4" }),
+      Plot.line(hourly, { x: "hour", y: "value", stroke: "currentColor", strokeWidth: 2 }),
+      Plot.dot(hourly, {
+        x: "hour", y: "value", fill: "currentColor", r: 3.5, tip: true,
+        title: r => `${fmtMin(r.hour * 60)} — ${fmtValue(r.value)}\n${RISK_LEVELS[riskIndex(r.value)].label}`,
+      }),
+    ],
+  }));
+  return el;
+}
+
+function renderMonthChart(d) {
+  const title = `Monthly Average 24h Heat Index — ${FULL_MONTH_NAMES[d.month - 1]} ${d.year}`;
+  const failed = (d.failures || []).map(f => f.location);
+  if (d.series.length === 0) return errorSection(title, (d.failures || []).map(f => `${f.location}: ${f.error}`).join("; ") || "no locations");
+
+  const rows = d.series.flatMap(s => s.hourly.map((value, hour) => ({ location: s.location, hour, value })))
+    .filter(r => r.value != null);
+  const lo = d3.min(rows, r => r.value);
+  const hi = d3.max(rows, r => r.value);
+  const bands = MONTH_BANDS
+    .map(b => ({ ...b, y1: Math.max(b.from, lo), y2: Math.min(b.to, hi) }))
+    .filter(b => b.y1 < b.y2);
+  const locations = d.series.map(s => s.location);
+  const colors = locations.map((_, i) => SERIES_COLORS[i % SERIES_COLORS.length]);
+  const comfortable = d.series.filter(s => d3.max(s.hourly) < 27).map(s => s.location);
+
+  const legend = bands.map(b => swatch(b.color, b.label, b.opacity)).join("") +
+    locations.map((name, i) => `<span><i style="background:${colors[i]}"></i>${name}</span>`).join("");
+  const meta = `Comfortable locations (max <27°C): ${comfortable.length ? comfortable.join(", ") : "none"}` +
+    (failed.length ? ` · No data: ${failed.join(", ")}` : "");
+
+  const el = section(title, meta, legend);
+  el.append(Plot.plot({
+    width: 1100,
+    height: 520,
+    marginLeft: 50,
+    x: { domain: [0, 23], ticks: d3.range(0, 24, 2), tickFormat: pad2, label: "Hour of day" },
+    y: { label: "Heat Index (°C)", grid: true, domain: [lo - 1, hi + 2] },
+    color: { domain: locations, range: colors },
+    marks: [
+      Plot.rect(bands, { x1: 0, x2: 23, y1: "y1", y2: "y2", fill: "color", fillOpacity: "opacity" }),
+      Plot.line(rows, { x: "hour", y: "value", z: "location", stroke: "location", strokeWidth: 2 }),
+      Plot.dot(rows, {
+        x: "hour", y: "value", fill: "location", r: 3, tip: true,
+        title: r => `${r.location}\n${pad2(r.hour)}:00 — ${fmtValue(r.value)}`,
+      }),
+    ],
+  }));
+  return el;
+}
+
+function renderAnnualChart(d, year) {
+  const title = `Annual Heat Index Heatmap (Hour vs Month) — ${d.location}, ${year}`;
+  if (d.error) return errorSection(title, d.error);
+
+  const cells = d.grid.flatMap((row, hour) => row.map((value, month) => ({ hour, month, value })));
+  const legend = ANNUAL_SCALE.range.map((c, i) => swatch(c, ANNUAL_SCALE.labels[i])).join("");
+
+  const el = section(title, null, legend);
+  el.append(Plot.plot({
+    width: 1100,
+    height: 620,
+    marginLeft: 60,
+    padding: 0,
+    x: { domain: d3.range(12), tickFormat: m => MONTH_NAMES[m], label: "Month" },
+    y: { domain: d3.range(23, -1, -1), tickFormat: h => h % 2 === 0 ? `${pad2(h)}:00` : "", label: "Hour of day" },
+    color: { type: "threshold", domain: ANNUAL_SCALE.domain, range: ANNUAL_SCALE.range, unknown: "#eee" },
+    marks: [
+      Plot.cell(cells, {
+        x: "month", y: "hour", fill: "value", stroke: "gray", strokeWidth: 0.5, tip: true,
+        title: c => `${MONTH_NAMES[c.month]} ${pad2(c.hour)}:00 — ${fmtValue(c.value)}`,
+      }),
+    ],
+  }));
+  return el;
+}
+
+const REPORTS = {
+  "last-week": data => data.lastWeek.map(renderLastWeekChart),
+  "month": data => data.month.map(renderMonthChart),
+  "annual": data => data.annual.charts.map(d => renderAnnualChart(d, data.annual.year)),
+};
+
+function show() {
+  const name = REPORTS[location.hash.slice(1)] ? location.hash.slice(1) : "last-week";
+  for (const a of document.querySelectorAll("nav a")) a.classList.toggle("active", a.dataset.report === name);
+  const root = document.getElementById("report");
+  root.replaceChildren(...REPORTS[name](window.HEAT_DATA));
+  window.scrollTo(0, 0);
+}
+
+window.addEventListener("hashchange", show);
+show();
+</script>
+</body>
+</html>
