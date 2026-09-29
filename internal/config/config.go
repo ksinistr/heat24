@@ -9,7 +9,7 @@ import (
 )
 
 type Location struct {
-	Name          string `yaml:"name"`
+	Name            string `yaml:"name"`
 	openmeteo.Point `yaml:",inline"`
 }
 

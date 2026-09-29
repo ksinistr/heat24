@@ -9,8 +9,8 @@ import (
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/ksinistr/heat24/internal/cache"
 	"github.com/ksinistr/heat24/internal/config"
-	"github.com/ksinistr/heat24/internal/report"
 	"github.com/ksinistr/heat24/internal/openmeteo"
+	"github.com/ksinistr/heat24/internal/report"
 )
 
 const configPath = "config.yaml"
