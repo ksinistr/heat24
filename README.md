@@ -1,113 +1,39 @@
 # heat24
 
-A Python application that fetches weather data for multiple locations in Cyprus and generates heat index charts to help determine optimal times for outdoor activities while avoiding the sun.
+A Go tool that visualises daily heat stress by hour for a set of locations, to pick safe times for outdoor activity. It fetches hourly weather from [Open-Meteo](https://open-meteo.com/), computes a heat index, and renders three reports in a static web page.
 
-## Example output
+## Reports
 
-![heat_index_plot_paphos_opt](https://github.com/user-attachments/assets/37ec437b-720e-45f7-80e3-36bfa050ab78)
+- **Last Week**: per-location 24h curve of the Hybrid Index averaged over the previous 7 days, filled by risk level, with sunrise/sunset.
+- **Month**: for each configured month of the previous calendar year, one 24h chart overlaying every location, with risk level bands and a list of comfortable locations.
+- **Annual**: per-location heatmap of the Hybrid Index by hour of day × month over the previous calendar year.
 
-## Features
+## Heat model
 
+- **Heat Index**: NOAA apparent temperature (Rothfusz regression) from air temperature and relative humidity.
+- **Hybrid Index**: air temperature below 27 °C, Heat Index at or above 27 °C. This is the value every report displays.
+- **Risk levels** (Hybrid Index): Suitable (<27 °C), Caution (27–32), Extreme Caution (32–41), Danger (41–54), Extreme Danger (≥54).
+- **Comfortable location**: a location with data where every hour is Suitable. A location that failed to load is never comfortable.
 
-- Fetches 7 days of hourly temperature and humidity data for multiple locations in Cyprus
-- Calculates heat index using the NOAA formula
-- Generates 24-hour heat index charts with color-coded risk levels
-- Automatically determines optimal walking times (morning and evening)
-- Shows sunrise/sunset times on the charts
-- Caches data locally to avoid repeated API calls
-- Supports multiple locations including Paphos, Limassol, Nicosia, and more
+See [CONTEXT.md](CONTEXT.md) for the full glossary.
 
-## Installation
+## Requirements
 
-1. Install [uv](https://docs.astral.sh/uv/), a fast Python package installer and resolver:
-   ```bash
-   # On macOS and Linux:
-   curl -LsSf https://astral.sh/uv/install.sh | sh
-   
-   # On Windows:
-   powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
-   ```
-
-2. Clone the repository:
-   ```bash
-   git clone <repository-url>
-   cd heat24
-   ```
-
-3. Install dependencies:
-   ```bash
-   make install
-   # or
-   uv pip install -e .
-   ```
+- Go >= 1.23
+- `xdg-open` (only for `make web`)
 
 ## Usage
 
-Run the application:
 ```bash
-make run
-# or
-uv run main.py
+make web
 ```
 
-The application will:
-1. Fetch weather data for all configured locations in Cyprus
-2. Generate heat index charts for each location
-3. Save charts as PNG files in the current directory
-4. Display sunrise/sunset information for each location
+This runs `go run ./cmd/heat24`, which prints all reports as JSON to stdout, writes them to `web/data.js` as `window.HEAT_DATA = ...`, and opens `web/index.html` in the browser.
 
-## Development
+To get only the JSON:
 
-### Commands
+```bash
+go run ./cmd/heat24 > reports.json
+```
 
-- Install dependencies: `make install`
-- Run the application: `make run`
-- Lint code: `make lint`
-- Format code: `make format`
-- Type check: `make typecheck`
-- Run tests: `make test`
-- Run all checks: `make check`
-- Clean cache files: `make clean`
-
-### Dependencies
-
-- Python >= 3.12
-- matplotlib >= 3.10.5
-- numpy >= 2.3.2
-- openmeteo-requests >= 1.7.1
-- pandas >= 2.3.2
-- requests-cache >= 1.2.1
-- retry-requests >= 2.0.0
-
-### Code Quality
-
-This project uses:
-- [ruff](https://docs.astral.sh/ruff/) for linting and formatting
-- [mypy](http://mypy-lang.org/) for type checking
-- [pytest](https://docs.pytest.org/) for testing
-
-## How It Works
-
-1. The application fetches 7 days of hourly temperature and relative humidity data from the Open-Meteo API for each configured location
-2. It calculates the heat index using the NOAA formula, which combines temperature and humidity to determine how hot it feels
-3. For each location, it computes 24-hour averages across the week to smooth out daily variations
-4. It generates a chart showing:
-   - Heat index levels throughout the day with color-coded risk zones
-   - Sunrise and sunset times
-   - Recommended walking times (morning and evening)
-   - Periods to avoid due to high heat index
-5. Data is cached locally for 24 hours to reduce API calls
-
-## Configuration
-
-Locations are configured in `main.py` in the `LOCATIONS` dictionary. You can add or modify locations by changing the name and coordinates (latitude, longitude).
-
-## Output
-
-The application generates PNG charts for each location showing:
-- 24-hour heat index curve with color-coded risk levels
-- Sunrise/sunset markers
-- Recommended activity windows
-- Time periods to avoid
-
-Charts are saved as `heat_index_plot_{location_name}.png` in the current directory.
+The program reads `config.yaml` from the current directory. Locations that fail to load are logged to stderr and reported with an error in the output; they do not abort the run.
