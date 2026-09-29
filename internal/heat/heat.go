@@ -90,3 +90,13 @@ func HourMonthGrid(samples []Sample) [24][12]float64 {
 	}
 	return out
 }
+
+func InMonth(samples []Sample, month time.Month) []Sample {
+	var out []Sample
+	for _, s := range samples {
+		if s.Time.Month() == month {
+			out = append(out, s)
+		}
+	}
+	return out
+}

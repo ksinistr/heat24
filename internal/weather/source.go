@@ -3,21 +3,25 @@ package weather
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
+
+	"github.com/nsr888/heat24/internal/heat"
 )
 
-type Response struct {
-	Timezone string `json:"timezone"`
-	Hourly   struct {
-		Time               []string   `json:"time"`
-		Temperature2m      []*float64 `json:"temperature_2m"`
-		RelativeHumidity2m []*float64 `json:"relative_humidity_2m"`
-	} `json:"hourly"`
-	Daily struct {
-		Sunrise []string `json:"sunrise"`
-		Sunset  []string `json:"sunset"`
-	} `json:"daily"`
+type Point struct {
+	Lat float64 `yaml:"lat"`
+	Lon float64 `yaml:"lon"`
+}
+
+func (p Point) key() string {
+	return fmt.Sprintf("%.4f_%.4f", p.Lat, p.Lon)
+}
+
+type LastWeek struct {
+	Timezone   string
+	Samples    []heat.Sample
+	SunriseMin int
+	SunsetMin  int
 }
 
 type Cache interface {
@@ -36,30 +40,45 @@ func NewSource(client *Client, cache Cache, forecastTTL, archiveTTL time.Duratio
 	return &Source{client: client, cache: cache, forecastTTL: forecastTTL, archiveTTL: archiveTTL}
 }
 
-func (s *Source) LastWeek(name string, lat, lon float64) (*Response, error) {
-	key := fmt.Sprintf("last_week/%s.json", slug(name))
-	return s.load(key, s.forecastTTL, func() ([]byte, error) {
-		return s.client.LastWeek(lat, lon)
+func (s *Source) LastWeek(p Point) (LastWeek, error) {
+	key := fmt.Sprintf("forecast/%s.json", p.key())
+	r, err := s.load(key, s.forecastTTL, func() ([]byte, error) {
+		return s.client.LastWeek(p.Lat, p.Lon)
 	})
+	if err != nil {
+		return LastWeek{}, err
+	}
+	tz, err := time.LoadLocation(r.Timezone)
+	if err != nil {
+		return LastWeek{}, err
+	}
+	samples, err := r.samples(tz)
+	if err != nil {
+		return LastWeek{}, err
+	}
+	sunrise, sunset, err := r.medianSunTimes(tz)
+	if err != nil {
+		return LastWeek{}, err
+	}
+	return LastWeek{Timezone: tz.String(), Samples: samples, SunriseMin: sunrise, SunsetMin: sunset}, nil
 }
 
-func (s *Source) Month(name string, lat, lon float64, year int, month time.Month) (*Response, error) {
-	first := time.Date(year, month, 1, 0, 0, 0, 0, time.UTC)
-	last := first.AddDate(0, 1, -1)
-	key := fmt.Sprintf("month/%s-%04d-%02d.json", slug(name), year, int(month))
-	return s.load(key, s.archiveTTL, func() ([]byte, error) {
-		return s.client.Archive(lat, lon, first.Format(time.DateOnly), last.Format(time.DateOnly))
+func (s *Source) Year(p Point, year int) ([]heat.Sample, error) {
+	key := fmt.Sprintf("archive/%s-%04d.json", p.key(), year)
+	r, err := s.load(key, s.archiveTTL, func() ([]byte, error) {
+		return s.client.Archive(p.Lat, p.Lon, fmt.Sprintf("%04d-01-01", year), fmt.Sprintf("%04d-12-31", year))
 	})
+	if err != nil {
+		return nil, err
+	}
+	tz, err := time.LoadLocation(r.Timezone)
+	if err != nil {
+		return nil, err
+	}
+	return r.samples(tz)
 }
 
-func (s *Source) Year(name string, lat, lon float64, year int) (*Response, error) {
-	key := fmt.Sprintf("annual/%s-%04d.json", slug(name), year)
-	return s.load(key, s.archiveTTL, func() ([]byte, error) {
-		return s.client.Archive(lat, lon, fmt.Sprintf("%04d-01-01", year), fmt.Sprintf("%04d-12-31", year))
-	})
-}
-
-func (s *Source) load(key string, ttl time.Duration, fetch func() ([]byte, error)) (*Response, error) {
+func (s *Source) load(key string, ttl time.Duration, fetch func() ([]byte, error)) (*response, error) {
 	data, ok, err := s.cache.Get(key, ttl)
 	if err != nil {
 		return nil, err
@@ -73,13 +92,9 @@ func (s *Source) load(key string, ttl time.Duration, fetch func() ([]byte, error
 			return nil, err
 		}
 	}
-	var r Response
+	var r response
 	if err := json.Unmarshal(data, &r); err != nil {
 		return nil, fmt.Errorf("%s: %w", key, err)
 	}
 	return &r, nil
-}
-
-func slug(name string) string {
-	return strings.ReplaceAll(strings.ToLower(strings.TrimSpace(name)), " ", "_")
 }

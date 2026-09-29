@@ -106,3 +106,24 @@ func sameFloat(a, b float64) bool {
 	}
 	return math.Abs(a-b) < 1e-9
 }
+
+func TestInMonth(t *testing.T) {
+	jan := Sample{Time: time.Date(2025, 1, 31, 23, 0, 0, 0, time.UTC)}
+	feb := Sample{Time: time.Date(2025, 2, 1, 0, 0, 0, 0, time.UTC)}
+	tests := []struct {
+		name    string
+		samples []Sample
+		month   time.Month
+		want    int
+	}{
+		{"keeps only matching month", []Sample{jan, feb, jan}, time.January, 2},
+		{"no match is empty", []Sample{jan}, time.March, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := len(InMonth(tt.samples, tt.month)); got != tt.want {
+				t.Errorf("len = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}

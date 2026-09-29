@@ -12,9 +12,8 @@ import (
 )
 
 type Source interface {
-	LastWeek(name string, lat, lon float64) (*weather.Response, error)
-	Month(name string, lat, lon float64, year int, month time.Month) (*weather.Response, error)
-	Year(name string, lat, lon float64, year int) (*weather.Response, error)
+	LastWeek(p weather.Point) (weather.LastWeek, error)
+	Year(p weather.Point, year int) ([]heat.Sample, error)
 }
 
 // Value encodes NaN as JSON null.
@@ -66,9 +65,9 @@ type AnnualReport struct {
 }
 
 type AnnualChart struct {
-	Location string     `json:"location"`
-	Error    string     `json:"error,omitempty"`
-	Grid     [][]Value  `json:"grid,omitempty"`
+	Location string    `json:"location"`
+	Error    string    `json:"error,omitempty"`
+	Grid     [][]Value `json:"grid,omitempty"`
 }
 
 type Builder struct {
@@ -101,43 +100,38 @@ func (b *Builder) lastWeek(locations []config.Location) []LastWeekChart {
 }
 
 func (b *Builder) lastWeekChart(l config.Location) (LastWeekChart, error) {
-	r, err := b.source.LastWeek(l.Name, l.Lat, l.Lon)
+	w, err := b.source.LastWeek(l.Point)
 	if err != nil {
 		return LastWeekChart{}, err
 	}
-	tz, err := r.Location()
-	if err != nil {
-		return LastWeekChart{}, err
-	}
-	samples, err := r.Samples(tz)
-	if err != nil {
-		return LastWeekChart{}, err
-	}
-	sunrise, sunset, err := r.MedianSunTimes(tz)
-	if err != nil {
-		return LastWeekChart{}, err
-	}
-	hourly := heat.HourlyHybrid(samples)
+	hourly := heat.HourlyHybrid(w.Samples)
 	return LastWeekChart{
 		Location:   l.Name,
-		Timezone:   tz.String(),
+		Timezone:   w.Timezone,
 		Hourly:     values(hourly[:]),
-		SunriseMin: sunrise,
-		SunsetMin:  sunset,
+		SunriseMin: w.SunriseMin,
+		SunsetMin:  w.SunsetMin,
 	}, nil
 }
 
 func (b *Builder) month(cfg config.Month, year int) []MonthChart {
+	samples := make([][]heat.Sample, len(cfg.Locations))
+	errs := make([]error, len(cfg.Locations))
+	for i, l := range cfg.Locations {
+		samples[i], errs[i] = b.source.Year(l.Point, year)
+		if errs[i] != nil {
+			log.Printf("month %04d: %s: %v", year, l.Name, errs[i])
+		}
+	}
 	charts := make([]MonthChart, 0, len(cfg.Months))
 	for _, m := range cfg.Months {
 		chart := MonthChart{Year: year, Month: m, Series: []MonthSeries{}}
-		for _, l := range cfg.Locations {
-			hourly, err := b.monthHourly(l, year, time.Month(m))
-			if err != nil {
-				log.Printf("month %04d-%02d: %s: %v", year, m, l.Name, err)
-				chart.Failures = append(chart.Failures, MonthFailure{Location: l.Name, Error: err.Error()})
+		for i, l := range cfg.Locations {
+			if errs[i] != nil {
+				chart.Failures = append(chart.Failures, MonthFailure{Location: l.Name, Error: errs[i].Error()})
 				continue
 			}
+			hourly := heat.HourlyHybrid(heat.InMonth(samples[i], time.Month(m)))
 			chart.Series = append(chart.Series, MonthSeries{Location: l.Name, Hourly: values(hourly[:])})
 		}
 		charts = append(charts, chart)
@@ -145,55 +139,26 @@ func (b *Builder) month(cfg config.Month, year int) []MonthChart {
 	return charts
 }
 
-func (b *Builder) monthHourly(l config.Location, year int, month time.Month) ([24]float64, error) {
-	r, err := b.source.Month(l.Name, l.Lat, l.Lon, year, month)
-	if err != nil {
-		return [24]float64{}, err
-	}
-	tz, err := r.Location()
-	if err != nil {
-		return [24]float64{}, err
-	}
-	samples, err := r.Samples(tz)
-	if err != nil {
-		return [24]float64{}, err
-	}
-	return heat.HourlyHybrid(samples), nil
-}
-
 func (b *Builder) annual(locations []config.Location, year int) AnnualReport {
 	out := AnnualReport{Year: year, Charts: make([]AnnualChart, 0, len(locations))}
 	for _, l := range locations {
-		grid, err := b.annualGrid(l, year)
+		samples, err := b.source.Year(l.Point, year)
 		if err != nil {
 			log.Printf("annual %04d: %s: %v", year, l.Name, err)
 			out.Charts = append(out.Charts, AnnualChart{Location: l.Name, Error: err.Error()})
 			continue
 		}
-		out.Charts = append(out.Charts, AnnualChart{Location: l.Name, Grid: grid})
+		out.Charts = append(out.Charts, AnnualChart{Location: l.Name, Grid: grid(heat.HourMonthGrid(samples))})
 	}
 	return out
 }
 
-func (b *Builder) annualGrid(l config.Location, year int) ([][]Value, error) {
-	r, err := b.source.Year(l.Name, l.Lat, l.Lon, year)
-	if err != nil {
-		return nil, err
-	}
-	tz, err := r.Location()
-	if err != nil {
-		return nil, err
-	}
-	samples, err := r.Samples(tz)
-	if err != nil {
-		return nil, err
-	}
-	grid := heat.HourMonthGrid(samples)
+func grid(in [24][12]float64) [][]Value {
 	rows := make([][]Value, 24)
 	for h := range 24 {
-		rows[h] = values(grid[h][:])
+		rows[h] = values(in[h][:])
 	}
-	return rows, nil
+	return rows
 }
 
 func values(in []float64) []Value {

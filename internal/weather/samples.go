@@ -10,11 +10,20 @@ import (
 
 const timeLayout = "2006-01-02T15:04"
 
-func (r *Response) Location() (*time.Location, error) {
-	return time.LoadLocation(r.Timezone)
+type response struct {
+	Timezone string `json:"timezone"`
+	Hourly   struct {
+		Time               []string   `json:"time"`
+		Temperature2m      []*float64 `json:"temperature_2m"`
+		RelativeHumidity2m []*float64 `json:"relative_humidity_2m"`
+	} `json:"hourly"`
+	Daily struct {
+		Sunrise []string `json:"sunrise"`
+		Sunset  []string `json:"sunset"`
+	} `json:"daily"`
 }
 
-func (r *Response) Samples(loc *time.Location) ([]heat.Sample, error) {
+func (r *response) samples(loc *time.Location) ([]heat.Sample, error) {
 	h := r.Hourly
 	if len(h.Temperature2m) != len(h.Time) || len(h.RelativeHumidity2m) != len(h.Time) {
 		return nil, fmt.Errorf("hourly arrays differ in length")
@@ -33,7 +42,7 @@ func (r *Response) Samples(loc *time.Location) ([]heat.Sample, error) {
 	return out, nil
 }
 
-func (r *Response) MedianSunTimes(loc *time.Location) (sunriseMin, sunsetMin int, err error) {
+func (r *response) medianSunTimes(loc *time.Location) (sunriseMin, sunsetMin int, err error) {
 	sunrise, err := minutesOfDay(r.Daily.Sunrise, loc)
 	if err != nil {
 		return 0, 0, err

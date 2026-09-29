@@ -5,12 +5,12 @@ import (
 	"time"
 
 	"github.com/jinzhu/configor"
+	"github.com/nsr888/heat24/internal/weather"
 )
 
 type Location struct {
-	Name string  `yaml:"name"`
-	Lat  float64 `yaml:"lat"`
-	Lon  float64 `yaml:"lon"`
+	Name          string `yaml:"name"`
+	weather.Point `yaml:",inline"`
 }
 
 type Cache struct {
