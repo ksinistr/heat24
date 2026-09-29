@@ -46,26 +46,33 @@
 <script src="https://cdn.jsdelivr.net/npm/@observablehq/plot@0.6"></script>
 <script src="data.js"></script>
 <script>
-const RISK_LEVELS = [
-  { max: 27, label: "Suitable for activity", color: "green", opacity: 0.3 },
-  { max: 32, label: "Caution", color: "yellow", opacity: 0.5 },
-  { max: 41, label: "Extreme Caution", color: "#FFD700", opacity: 0.6 },
-  { max: 54, label: "Danger", color: "orange", opacity: 0.7 },
-  { max: Infinity, label: "Extreme Danger", color: "red", opacity: 0.8 },
-];
-const MONTH_BANDS = [
+const LAST_WEEK_STYLE = {
+  "Suitable": { color: "green", opacity: 0.3 },
+  "Caution": { color: "yellow", opacity: 0.5 },
+  "Extreme Caution": { color: "#FFD700", opacity: 0.6 },
+  "Danger": { color: "orange", opacity: 0.7 },
+  "Extreme Danger": { color: "red", opacity: 0.8 },
+};
+const MONTH_STYLE = {
+  "Caution": { color: "yellow", opacity: 0.8 },
+  "Extreme Caution": { color: "orange", opacity: 0.6 },
+  "Danger": { color: "orangered", opacity: 0.7 },
+  "Extreme Danger": { color: "red", opacity: 0.8 },
+};
+const MONTH_COLD_BANDS = [
   { from: -Infinity, to: 0, label: "Very Cold (<0°C)", color: "blue", opacity: 0.4 },
   { from: 0, to: 10, label: "Cold (0-10°C)", color: "lightblue", opacity: 0.4 },
-  { from: 27, to: 32, label: "Caution (27-32°C)", color: "yellow", opacity: 0.8 },
-  { from: 32, to: 41, label: "Extreme Caution (32-41°C)", color: "orange", opacity: 0.6 },
-  { from: 41, to: 54, label: "Danger (41-54°C)", color: "orangered", opacity: 0.7 },
-  { from: 54, to: Infinity, label: "Extreme Danger (>54°C)", color: "red", opacity: 0.8 },
 ];
-const ANNUAL_SCALE = {
-  domain: [0, 10, 27, 32, 41, 54],
-  range: ["#00008B", "#4169E1", "#90EE90", "#FFFF00", "#FFA500", "#FF0000", "#8B0000"],
-  labels: ["<0°C (Freezing)", "0-10°C (Cold)", "10-27°C (Mild)", "27-32°C (Caution)",
-    "32-41°C (Extreme Caution)", "41-54°C (Danger)", ">54°C (Extreme Danger)"],
+const ANNUAL_COLD = [
+  { max: 0, label: "<0°C (Freezing)", color: "#00008B" },
+  { max: 10, label: "0-10°C (Cold)", color: "#4169E1" },
+];
+const ANNUAL_COLORS = {
+  "Suitable": "#90EE90",
+  "Caution": "#FFFF00",
+  "Extreme Caution": "#FFA500",
+  "Danger": "#FF0000",
+  "Extreme Danger": "#8B0000",
 };
 const SERIES_COLORS = ["blue", "red", "green", "orange", "purple", "brown", "pink", "gray", "olive", "cyan"];
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -73,7 +80,27 @@ const FULL_MONTH_NAMES = ["January", "February", "March", "April", "May", "June"
   "July", "August", "September", "October", "November", "December"];
 const STEP_MIN = 10;
 
-const riskIndex = value => RISK_LEVELS.findIndex(l => value < l.max);
+const RISK_LEVELS = window.HEAT_DATA.riskLevels.map((l, i, all) => ({
+  name: l.name,
+  from: i === 0 ? -Infinity : all[i - 1].max,
+  to: l.max ?? Infinity,
+}));
+const riskIndex = value => RISK_LEVELS.findIndex(l => value < l.to);
+const rangeLabel = (from, to) => from === -Infinity ? `<${to}°C` : to === Infinity ? `>${from}°C` : `${from}-${to}°C`;
+const levelLabel = l => `${l.name} (${rangeLabel(l.from, l.to)})`;
+const MONTH_BANDS = [
+  ...MONTH_COLD_BANDS,
+  ...RISK_LEVELS.filter(l => MONTH_STYLE[l.name]).map(l => ({ ...l, ...MONTH_STYLE[l.name], label: levelLabel(l) })),
+];
+const ANNUAL_SCALE = (() => {
+  const cold = ANNUAL_COLD.at(-1).max;
+  const levels = RISK_LEVELS.map((l, i) => i === 0 ? { ...l, from: cold, label: `${rangeLabel(cold, l.to)} (Mild)` } : { ...l, label: `${rangeLabel(l.from, l.to)} (${l.name})` });
+  return {
+    domain: [...ANNUAL_COLD.map(c => c.max), ...levels.slice(0, -1).map(l => l.to)],
+    range: [...ANNUAL_COLD.map(c => c.color), ...levels.map(l => ANNUAL_COLORS[l.name])],
+    labels: [...ANNUAL_COLD.map(c => c.label), ...levels.map(l => l.label)],
+  };
+})();
 const pad2 = n => String(n).padStart(2, "0");
 const fmtMin = min => `${pad2(Math.floor(min / 60))}:${pad2(Math.round(min % 60))}`;
 const fmtValue = v => v == null ? "no data" : `${v.toFixed(1)} °C`;
@@ -134,7 +161,7 @@ function renderLastWeekChart(d) {
   const hourly = d.hourly.map((value, hour) => ({ hour, value })).filter(r => r.value != null);
   const segments = riskSegments(interpolate(d.hourly));
   const base = d3.min(hourly, r => r.value) - 5;
-  const legend = RISK_LEVELS.map(l => swatch(l.color, l.label, l.opacity)).join("") +
+  const legend = RISK_LEVELS.map(l => swatch(LAST_WEEK_STYLE[l.name].color, l.name, LAST_WEEK_STYLE[l.name].opacity)).join("") +
     `<span><i class="line" style="border-color:gold"></i>Sunrise</span>` +
     `<span><i class="line" style="border-color:purple"></i>Sunset</span>`;
 
@@ -148,15 +175,15 @@ function renderLastWeekChart(d) {
     marks: [
       Plot.areaY(segments, {
         x: "hour", y1: base, y2: "value", z: "seg",
-        fill: r => RISK_LEVELS[r.level].color,
-        fillOpacity: r => RISK_LEVELS[r.level].opacity,
+        fill: r => LAST_WEEK_STYLE[RISK_LEVELS[r.level].name].color,
+        fillOpacity: r => LAST_WEEK_STYLE[RISK_LEVELS[r.level].name].opacity,
       }),
       Plot.ruleX([d.sunriseMin / 60], { stroke: "gold", strokeWidth: 1.5, strokeDasharray: "5,4" }),
       Plot.ruleX([d.sunsetMin / 60], { stroke: "purple", strokeWidth: 1.5, strokeDasharray: "5,4" }),
       Plot.line(hourly, { x: "hour", y: "value", stroke: "currentColor", strokeWidth: 2 }),
       Plot.dot(hourly, {
         x: "hour", y: "value", fill: "currentColor", r: 3.5, tip: true,
-        title: r => `${fmtMin(r.hour * 60)} — ${fmtValue(r.value)}\n${RISK_LEVELS[riskIndex(r.value)].label}`,
+        title: r => `${fmtMin(r.hour * 60)} — ${fmtValue(r.value)}\n${RISK_LEVELS[riskIndex(r.value)].name}`,
       }),
     ],
   }));
@@ -177,11 +204,11 @@ function renderMonthChart(d) {
     .filter(b => b.y1 < b.y2);
   const locations = d.series.map(s => s.location);
   const colors = locations.map((_, i) => SERIES_COLORS[i % SERIES_COLORS.length]);
-  const comfortable = d.series.filter(s => d3.max(s.hourly) < 27).map(s => s.location);
+  const comfortable = d.comfortable;
 
   const legend = bands.map(b => swatch(b.color, b.label, b.opacity)).join("") +
     locations.map((name, i) => `<span><i style="background:${colors[i]}"></i>${name}</span>`).join("");
-  const meta = `Comfortable locations (max <27°C): ${comfortable.length ? comfortable.join(", ") : "none"}` +
+  const meta = `Comfortable locations (${RISK_LEVELS[0].name} all day): ${comfortable.length ? comfortable.join(", ") : "none"}` +
     (failed.length ? ` · No data: ${failed.join(", ")}` : "");
 
   const el = section(title, meta, legend);

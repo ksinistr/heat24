@@ -127,3 +127,59 @@ func TestInMonth(t *testing.T) {
 		})
 	}
 }
+
+func TestComfortable(t *testing.T) {
+	hours := func(v float64, overrides map[int]float64) [24]float64 {
+		var out [24]float64
+		for h := range out {
+			out[h] = v
+		}
+		for h, o := range overrides {
+			out[h] = o
+		}
+		return out
+	}
+	nan := math.NaN()
+	tests := []struct {
+		name   string
+		hourly [24]float64
+		want   bool
+	}{
+		{"all suitable", hours(20, nil), true},
+		{"just below caution", hours(20, map[int]float64{14: 26.99}), true},
+		{"caution boundary is not suitable", hours(20, map[int]float64{14: 27}), false},
+		{"missing hours ignored", hours(20, map[int]float64{3: nan, 4: nan}), true},
+		{"no data is not comfortable", hours(nan, nil), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Comfortable(tt.hourly); got != tt.want {
+				t.Errorf("Comfortable = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRiskLevels(t *testing.T) {
+	tests := []struct {
+		name string
+		max  float64
+	}{
+		{"Suitable", 27},
+		{"Caution", 32},
+		{"Extreme Caution", 41},
+		{"Danger", 54},
+		{"Extreme Danger", math.Inf(1)},
+	}
+	levels := RiskLevels()
+	if len(levels) != len(tests) {
+		t.Fatalf("levels = %d, want %d", len(levels), len(tests))
+	}
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if levels[i].Name != tt.name || levels[i].MaxC != tt.max {
+				t.Errorf("level %d = %+v, want %s <%v", i, levels[i], tt.name, tt.max)
+			}
+		})
+	}
+}

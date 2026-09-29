@@ -28,9 +28,15 @@ func (v Value) MarshalJSON() ([]byte, error) {
 }
 
 type Reports struct {
-	LastWeek []LastWeekChart `json:"lastWeek"`
-	Month    []MonthChart    `json:"month"`
-	Annual   AnnualReport    `json:"annual"`
+	RiskLevels []RiskLevel     `json:"riskLevels"`
+	LastWeek   []LastWeekChart `json:"lastWeek"`
+	Month      []MonthChart    `json:"month"`
+	Annual     AnnualReport    `json:"annual"`
+}
+
+type RiskLevel struct {
+	Name string `json:"name"`
+	Max  Value  `json:"max"`
 }
 
 type LastWeekChart struct {
@@ -53,10 +59,11 @@ type MonthFailure struct {
 }
 
 type MonthChart struct {
-	Year     int            `json:"year"`
-	Month    int            `json:"month"`
-	Series   []MonthSeries  `json:"series"`
-	Failures []MonthFailure `json:"failures,omitempty"`
+	Year        int            `json:"year"`
+	Month       int            `json:"month"`
+	Series      []MonthSeries  `json:"series"`
+	Comfortable []string       `json:"comfortable"`
+	Failures    []MonthFailure `json:"failures,omitempty"`
 }
 
 type AnnualReport struct {
@@ -80,9 +87,10 @@ func NewBuilder(source Source) *Builder {
 
 func (b *Builder) Build(cfg config.Config, year int) Reports {
 	return Reports{
-		LastWeek: b.lastWeek(cfg.Reports.LastWeek.Locations),
-		Month:    b.month(cfg.Reports.Month, year),
-		Annual:   b.annual(cfg.Reports.Annual.Locations, year),
+		RiskLevels: riskLevels(),
+		LastWeek:   b.lastWeek(cfg.Reports.LastWeek.Locations),
+		Month:      b.month(cfg.Reports.Month, year),
+		Annual:     b.annual(cfg.Reports.Annual.Locations, year),
 	}
 }
 
@@ -125,7 +133,7 @@ func (b *Builder) month(cfg config.Month, year int) []MonthChart {
 	}
 	charts := make([]MonthChart, 0, len(cfg.Months))
 	for _, m := range cfg.Months {
-		chart := MonthChart{Year: year, Month: m, Series: []MonthSeries{}}
+		chart := MonthChart{Year: year, Month: m, Series: []MonthSeries{}, Comfortable: []string{}}
 		for i, l := range cfg.Locations {
 			if errs[i] != nil {
 				chart.Failures = append(chart.Failures, MonthFailure{Location: l.Name, Error: errs[i].Error()})
@@ -133,6 +141,9 @@ func (b *Builder) month(cfg config.Month, year int) []MonthChart {
 			}
 			hourly := heat.HourlyHybrid(heat.InMonth(samples[i], time.Month(m)))
 			chart.Series = append(chart.Series, MonthSeries{Location: l.Name, Hourly: values(hourly[:])})
+			if heat.Comfortable(hourly) {
+				chart.Comfortable = append(chart.Comfortable, l.Name)
+			}
 		}
 		charts = append(charts, chart)
 	}
@@ -149,6 +160,15 @@ func (b *Builder) annual(locations []config.Location, year int) AnnualReport {
 			continue
 		}
 		out.Charts = append(out.Charts, AnnualChart{Location: l.Name, Grid: grid(heat.HourMonthGrid(samples))})
+	}
+	return out
+}
+
+func riskLevels() []RiskLevel {
+	levels := heat.RiskLevels()
+	out := make([]RiskLevel, len(levels))
+	for i, l := range levels {
+		out[i] = RiskLevel{Name: l.Name, Max: Value(l.MaxC)}
 	}
 	return out
 }

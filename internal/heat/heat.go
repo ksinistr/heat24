@@ -5,7 +5,38 @@ import (
 	"time"
 )
 
-const hybridThresholdC = 27.0
+const suitableMaxC = 27.0
+
+type RiskLevel struct {
+	Name string
+	MaxC float64
+}
+
+// Upper bounds are exclusive; the last level is unbounded.
+func RiskLevels() []RiskLevel {
+	return []RiskLevel{
+		{"Suitable", suitableMaxC},
+		{"Caution", 32},
+		{"Extreme Caution", 41},
+		{"Danger", 54},
+		{"Extreme Danger", math.Inf(1)},
+	}
+}
+
+// Hours without data (NaN) are ignored; no data at all is not comfortable.
+func Comfortable(hourly [24]float64) bool {
+	seen := false
+	for _, v := range hourly {
+		if math.IsNaN(v) {
+			continue
+		}
+		if v >= suitableMaxC {
+			return false
+		}
+		seen = true
+	}
+	return seen
+}
 
 type Sample struct {
 	Time  time.Time
@@ -39,7 +70,7 @@ func IndexC(tempC, rh float64) float64 {
 }
 
 func HybridC(tempC, rh float64) float64 {
-	if tempC < hybridThresholdC {
+	if tempC < suitableMaxC {
 		return tempC
 	}
 	return IndexC(tempC, rh)
