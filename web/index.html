@@ -156,6 +156,7 @@ function riskSegments(points) {
 
 function renderLastWeekChart(d) {
   const title = `24h Temperature/Heat Index (7-day hourly averages) — ${d.location}`;
+  const period = d.from ? `${d.from} – ${d.to} · ` : "";
   if (d.error) return errorSection(title, d.error);
 
   const hourly = d.hourly.map((value, hour) => ({ hour, value })).filter(r => r.value != null);
@@ -165,7 +166,7 @@ function renderLastWeekChart(d) {
     `<span><i class="line" style="border-color:gold"></i>Sunrise</span>` +
     `<span><i class="line" style="border-color:purple"></i>Sunset</span>`;
 
-  const el = section(title, `Sunrise ${fmtMin(d.sunriseMin)} · Sunset ${fmtMin(d.sunsetMin)}`, legend);
+  const el = section(title, `${period}Sunrise ${fmtMin(d.sunriseMin)} · Sunset ${fmtMin(d.sunsetMin)}`, legend);
   el.append(Plot.plot({
     width: 1100,
     height: 460,

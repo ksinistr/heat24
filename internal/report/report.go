@@ -43,6 +43,8 @@ type LastWeekChart struct {
 	Location   string  `json:"location"`
 	Error      string  `json:"error,omitempty"`
 	Timezone   string  `json:"timezone,omitempty"`
+	From       string  `json:"from,omitempty"`
+	To         string  `json:"to,omitempty"`
 	Hourly     []Value `json:"hourly,omitempty"`
 	SunriseMin int     `json:"sunriseMin,omitempty"`
 	SunsetMin  int     `json:"sunsetMin,omitempty"`
@@ -113,9 +115,12 @@ func (b *Builder) lastWeekChart(l config.Location) (LastWeekChart, error) {
 		return LastWeekChart{}, err
 	}
 	hourly := heat.HourlyHybrid(w.Samples)
+	from, to := dateRange(w.Samples)
 	return LastWeekChart{
 		Location:   l.Name,
 		Timezone:   w.Timezone,
+		From:       from,
+		To:         to,
 		Hourly:     values(hourly[:]),
 		SunriseMin: w.SunriseMin,
 		SunsetMin:  w.SunsetMin,
@@ -162,6 +167,22 @@ func (b *Builder) annual(locations []config.Location, year int) AnnualReport {
 		out.Charts = append(out.Charts, AnnualChart{Location: l.Name, Grid: grid(heat.HourMonthGrid(samples))})
 	}
 	return out
+}
+
+func dateRange(samples []heat.Sample) (from, to string) {
+	if len(samples) == 0 {
+		return "", ""
+	}
+	first, last := samples[0].Time, samples[0].Time
+	for _, s := range samples[1:] {
+		if s.Time.Before(first) {
+			first = s.Time
+		}
+		if s.Time.After(last) {
+			last = s.Time
+		}
+	}
+	return first.Format(time.DateOnly), last.Format(time.DateOnly)
 }
 
 func riskLevels() []RiskLevel {
